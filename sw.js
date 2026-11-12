@@ -1,6 +1,6 @@
 'use strict';
 const PREFIX = 'little-songs-shell:' + new URL(self.registration.scope).pathname + ':';
-const CACHE = PREFIX + 'v3';
+const CACHE = PREFIX + 'v4';
 const SHELL = ['./','./index.html','./style.css','./app.js','./manifest.webmanifest','./songs.json','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

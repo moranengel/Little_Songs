@@ -11,25 +11,27 @@
 </head>
 <body>
 <main class="app">
-<header class="top"><div><p class="eyebrow">השירים הקטנים שלנו</p><h1>זמן לשיר!</h1></div><span class="rainbow" aria-hidden="true">🌈</span></header>
+<header class="top"><div><p class="eyebrow">השירים הקטנים שלנו</p><h1>זמן לשיר!</h1></div><div class="top-actions"><span class="rainbow" aria-hidden="true">🌈</span><button id="parents-toggle" class="icon-button" aria-label="הגדרות" aria-haspopup="dialog" aria-expanded="false" aria-controls="parents">⚙</button></div></header>
 <section class="player" aria-label="נגן השירים">
 <div class="now-row"><span id="now-icon" class="now-icon" aria-hidden="true">🧸</span><div class="now-copy"><p class="eyebrow" id="now-label">איזה שיר נשמע היום?</p><h2 id="now-title">בוחרים ומקשיבים</h2></div>
 <button id="play" class="round primary" aria-label="ניגון" disabled>▶︎</button></div>
 <div class="time-row"><span id="elapsed">0:00</span><input id="seek" type="range" min="0" max="1" value="0" step="0.1" aria-label="מיקום בשיר" disabled><span id="duration">0:00</span></div>
 <div class="transport"><button id="previous" class="small-control" aria-label="השיר הקודם" disabled>⏮︎</button><span id="play-state">קצת מוזיקה, המון שמחה</span><button id="next" class="small-control" aria-label="השיר הבא" disabled>⏭︎</button></div>
 </section>
-<div class="section-heading"><h2>🎶 השירים שלנו</h2><span id="count" class="count">0 שירים</span></div>
+<div class="library-toolbar"><div class="section-heading"><h2>🎶 השירים שלנו</h2><div class="list-actions"><span id="count" class="count" role="status">0 שירים</span><button id="search-toggle" class="icon-button" aria-label="חיפוש שירים" aria-expanded="false" aria-controls="search-box"><svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg></button></div></div>
+<div id="search-box" class="search-box" role="search" hidden><label class="sr-only" for="song-search">חיפוש לפי שם שיר</label><input id="song-search" type="search" placeholder="איזה שיר מחפשים?" autocomplete="off" enterkeyhint="search"><button id="search-clear" class="icon-button" aria-label="ניקוי החיפוש">×</button></div></div>
+<div class="library-scroll" tabindex="0" role="region" aria-label="ספריית השירים — רשימה נגללת">
 <div id="song-list" class="song-list" aria-label="רשימת שירים"></div>
-<div id="empty" class="empty" hidden><span>🐣</span><h2>כאן יגורו השירים שלכם</h2><p>אפשר להוסיף שירים דרך האזור להורים למטה.</p></div>
-<button id="parents-toggle" class="parent-toggle" aria-expanded="false" aria-controls="parents">⚙ להורים</button>
-<section id="parents" class="parents" hidden aria-label="ניהול השירים">
-<div class="panel-heading"><h2>הפינה של ההורים</h2><button id="edit-toggle" class="outline" aria-pressed="false">עריכת שירים</button></div>
+<div id="empty" class="empty" hidden><span>🐣</span><h2>כאן יגורו השירים שלכם</h2><p>אפשר להוסיף שירים דרך גלגל השיניים למעלה.</p></div>
+<div id="no-results" class="empty" hidden role="status"><span aria-hidden="true">🔎</span><h2>לא מצאנו שיר מתאים</h2><p>נסו שם אחר או נקו את החיפוש.</p></div>
+<p class="footer">עם המון אהבה וקצת מוזיקה ♡</p></div>
+<dialog id="parents" class="parents" aria-labelledby="parents-title">
+<div class="dialog-top"><h2 id="parents-title">הגדרות השירים</h2><button id="parents-close" class="close" aria-label="סגירת ההגדרות">×</button></div><button id="edit-toggle" class="outline" aria-pressed="false">עריכת שירים</button>
 <p class="hint">השירים שמוסיפים כאן, השמות והאייקונים נשמרים במכשיר הזה בלבד.</p>
 <div class="parent-actions"><button id="import" class="primary action">＋ הוספת שירים מהאייפון</button><button id="download-all" class="secondary action">↓ שמירת כל השירים לאופליין</button><button id="refresh" class="outline action">↻ בדיקת שירים חדשים באתר</button><button id="restore" class="text-button" hidden>החזרת שירים שהוסתרו</button></div>
 <p id="offline-status" class="offline-status" role="status">בודקים את השמירה לאופליין…</p><p id="download-progress" class="hint" role="status"></p>
 <details class="install-help"><summary>איך מוסיפים למסך הבית?</summary><p>פתחי את כתובת האתר בספארי, לחצי על שיתוף ואז ״הוספה למסך הבית״. פתחי את האייקון החדש ושמרי את השירים לאופליין מתוכו. אין צורך ב־Scripting או בקיצורים.</p><p>ניקוי נתוני האתר עלול למחוק את השירים המקומיים. שמרי את קבצי המקור גם באפליקציית קבצים.</p></details>
-</section>
-<p class="footer">עם המון אהבה וקצת מוזיקה ♡</p>
+</dialog>
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 <div id="fatal" class="fatal" hidden role="alert"></div>
 </main>

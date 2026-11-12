@@ -8,6 +8,8 @@
   let editingId = null, pickedIcon = '', operation = false, shellReady = false, scrubbing = false;
   let noticeTimer, playToken = 0;
   const visible = () => tracks.filter(t => !t.hidden).sort((a,b) => a.order-b.order || a.id.localeCompare(b.id));
+  const searchKey = text => text.normalize('NFKD').replace(/[\u0591-\u05c7]/g,'').toLocaleLowerCase('he').trim();
+  const matchesSearch = track => searchKey(track.title).includes(searchKey($('song-search').value));
   const current = () => tracks.find(t => t.id === currentId);
   const hash = str => [...str].reduce((h,c) => (h*31+c.codePointAt(0))>>>0,0);
   const iconFor = t => t.icon || icons[hash(t.id)%8];
@@ -127,7 +129,7 @@
     });
   }
   function render() {
-    const list = visible(); $('song-list').replaceChildren(); $('empty').hidden = !!list.length; $('count').textContent = list.length+' שירים';
+    const all = visible(); const list = all.filter(matchesSearch); $('song-list').replaceChildren(); $('empty').hidden = !!all.length; $('no-results').hidden = !all.length || !!list.length; $('count').textContent = list.length === all.length ? all.length+' שירים' : list.length+' מתוך '+all.length;
     for (const track of list) {
       const card = document.createElement('div'); card.className = 'song-card'; card.dataset.id = track.id; card.style.backgroundColor = colors[hash(track.id)%colors.length];
       const button = document.createElement('button'); button.className = 'song-main'; button.type = 'button';
@@ -142,8 +144,8 @@
     }
     $('restore').hidden = !tracks.some(t => t.hidden);
     $('edit-toggle').textContent = editing ? 'סיום עריכה' : 'עריכת שירים'; $('edit-toggle').setAttribute('aria-pressed',String(editing));
-    const saved = list.filter(t => t.blob).length;
-    $('offline-status').textContent = (shellReady ? '✓ הממשק מוכן לאופליין' : 'הממשק עדיין לא אושר לאופליין')+' · '+saved+' מתוך '+list.length+' שירים שמורים';
+    const saved = all.filter(t => t.blob).length;
+    $('offline-status').textContent = (shellReady ? '✓ הממשק מוכן לאופליין' : 'הממשק עדיין לא אושר לאופליין')+' · '+saved+' מתוך '+all.length+' שירים שמורים';
     syncPlayer();
   }
   async function requestPersistence() { try { if (navigator.storage?.persist) await navigator.storage.persist(); } catch {} }
@@ -224,8 +226,18 @@
   $('seek').addEventListener('change',() => { if (current() && Number.isFinite(audio.duration)) audio.currentTime = Math.min(audio.duration,Math.max(0,Number($('seek').value))); scrubbing = false; syncPlayer(); });
   for (const name of ['play','pause','ended','timeupdate','loadedmetadata','durationchange','emptied']) audio.addEventListener(name,syncPlayer);
   audio.addEventListener('error',() => { if (currentId) { syncPlayer(); notify('לא ניתן לנגן את השיר. נסי להוריד אותו לאופליין או לבחור קובץ אחר.'); } });
-  $('parents-toggle').addEventListener('click',() => { $('parents').hidden = !$('parents').hidden; $('parents-toggle').setAttribute('aria-expanded',String(!$('parents').hidden)); });
-  $('edit-toggle').addEventListener('click',() => { editing = !editing; render(); });
+  $('parents-toggle').addEventListener('click',() => { $('parents').showModal(); $('parents-toggle').setAttribute('aria-expanded','true'); });
+  $('parents-close').addEventListener('click',() => $('parents').close());
+  $('parents').addEventListener('close',() => $('parents-toggle').setAttribute('aria-expanded','false'));
+  $('search-toggle').addEventListener('click',() => {
+    const open = $('search-box').hidden; $('search-box').hidden = !open;
+    $('search-toggle').setAttribute('aria-expanded',String(open));
+    if (open) $('song-search').focus();
+    else { $('song-search').value = ''; render(); }
+  });
+  $('song-search').addEventListener('input',() => { render(); document.querySelector('.library-scroll').scrollTop = 0; });
+  $('search-clear').addEventListener('click',() => { $('song-search').value = ''; render(); $('song-search').focus(); });
+  $('edit-toggle').addEventListener('click',() => { editing = !editing; render(); if (editing) $('parents').close(); });
   $('import').addEventListener('click',() => $('files').click()); $('files').addEventListener('change',() => importFiles([...$('files').files]));
   $('download-all').addEventListener('click',downloadAll); $('refresh').addEventListener('click',() => busy(() => refreshCatalog()));
   $('restore').addEventListener('click',() => busy(async () => { await write('tracks',tracks.filter(t => t.hidden).map(t => ({...t,hidden:false}))); await reload(); notify('השירים חזרו לרשימה. להאזנה אופליין יש לשמור אותם שוב.'); }));
