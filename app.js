@@ -7,6 +7,8 @@
   let db, tracks = [], currentId = null, objectURL = null, editing = false;
   let editingId = null, pickedIcon = '', operation = false, shellReady = false, scrubbing = false;
   let noticeTimer, playToken = 0;
+  let backupState = {revision:0,savedRevision:0,lastConfirmedAt:0};
+  let preparedBackup = null, offeredBackup = null, preparationTimer, preparationToken = 0, preparing = false, backupError = '', dismissedRevision = -1;
   const visible = () => tracks.filter(t => !t.hidden).sort((a,b) => a.order-b.order || a.id.localeCompare(b.id));
   const searchKey = text => text.normalize('NFKD').replace(/[\u0591-\u05c7]/g,'').toLocaleLowerCase('he').trim();
   const matchesSearch = track => searchKey(track.title).includes(searchKey($('song-search').value));
@@ -31,19 +33,33 @@
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
   }
-  function write(store, entries, deletions = []) {
+  function write(store, entries, deletions = [], changed = false) {
     return new Promise((resolve,reject) => {
-      const tx = db.transaction(store,'readwrite'); const table = tx.objectStore(store);
+      const tx = db.transaction(changed ? [store,'meta'] : store,'readwrite'); const table = tx.objectStore(store);
+      if (changed) {
+        const meta = tx.objectStore('meta'); const stateRequest = meta.get('backupState');
+        stateRequest.onsuccess = () => {
+          const old = stateRequest.result?.value || {revision:0,savedRevision:0,lastConfirmedAt:0};
+          meta.put({key:'backupState',value:{...old,revision:old.revision+1}});
+        };
+      }
       entries.forEach(entry => table.put(entry)); deletions.forEach(key => table.delete(key));
       tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error || new Error('השמירה לא הושלמה.'));
     });
   }
-  async function reload() { tracks = await read('tracks'); render(); }
+  async function reload() {
+    tracks = await read('tracks');
+    const stored = await read('meta','backupState');
+    backupState = stored?.value || {revision:tracks.length ? 1 : 0,savedRevision:0,lastConfirmedAt:0};
+    if (!stored && tracks.length) await write('meta',[{key:'backupState',value:backupState}]);
+    if (preparedBackup && preparedBackup.revision !== backupState.revision) preparedBackup = null;
+    render(); scheduleBackup();
+  }
   async function busy(task) {
     if (operation) return;
-    operation = true; document.querySelectorAll('.parent-actions button,#import,#edit-form button').forEach(b => b.disabled = true);
-    try { await task(); } catch(error) { notify(message(error)); }
-    finally { operation = false; document.querySelectorAll('.parent-actions button,#import,#edit-form button').forEach(b => b.disabled = false); }
+    operation = true; document.querySelectorAll('.parent-actions button,#import,#edit-form button,#backup-import').forEach(b => b.disabled = true);
+    try { await task(); } catch(error) { if ($('parents').open) backupError = message(error); notify(message(error)); }
+    finally { operation = false; document.querySelectorAll('.parent-actions button,#import,#edit-form button,#backup-import').forEach(b => b.disabled = false); renderBackup(); }
   }
   function validateCatalog(data) {
     if (!data || !Array.isArray(data.songs)) throw new Error('רשימת השירים באתר אינה תקינה.');
@@ -66,7 +82,8 @@
         const old = previous.get(t.id);
         return old ? {...old,url:t.url,order:t.order,duration:t.duration,title:old.renamed ? old.title : t.title} : {...t,icon:t.defaultIcon,hidden:false};
       });
-      await write('tracks',updates); await write('meta',[{key:'catalogUpdated',value:Date.now()}]);
+      const changed = updates.some(t => {const old=previous.get(t.id);return !old || t.title!==old.title || t.icon!==old.icon || t.order!==old.order;});
+      await write('tracks',updates,[],changed); await write('meta',[{key:'catalogUpdated',value:Date.now()}]);
       await reload(); if (!silent) notify('רשימת השירים עודכנה. השינויים האישיים שלך נשמרו.');
     } catch(error) {
       if (!tracks.length) notify('לא ניתן לבדוק שירים באתר כרגע. אפשר להוסיף שירים מהמכשיר.');
@@ -146,7 +163,7 @@
     $('edit-toggle').textContent = editing ? 'סיום עריכה' : 'עריכת שירים'; $('edit-toggle').setAttribute('aria-pressed',String(editing));
     const saved = all.filter(t => t.blob).length;
     $('offline-status').textContent = (shellReady ? '✓ הממשק מוכן לאופליין' : 'הממשק עדיין לא אושר לאופליין')+' · '+saved+' מתוך '+all.length+' שירים שמורים';
-    syncPlayer();
+    syncPlayer(); renderBackup();
   }
   async function requestPersistence() { try { if (navigator.storage?.persist) await navigator.storage.persist(); } catch {} }
   async function importFiles(files) {
@@ -158,7 +175,7 @@
           if (!(file.type.startsWith('audio/') || /\.(mp3|m4a|aac|wav|aif|aiff|flac|caf|ogg|mp4)$/i.test(file.name))) throw new Error('סוג קובץ לא נתמך');
           if (!file.size) throw new Error('הקובץ ריק');
           const id = 'local:'+(crypto.randomUUID ? crypto.randomUUID() : Date.now()+'-'+Math.random().toString(36).slice(2));
-          await write('tracks',[{id,title:file.name.replace(/\.[^.]+$/,'').slice(0,180),source:'local',blob:file,hidden:false,order:Date.now()+added}]); added++;
+          await write('tracks',[{id,title:file.name.replace(/\.[^.]+$/,'').slice(0,180),source:'local',blob:file,hidden:false,order:Date.now()+added}],[],true); added++;
         } catch(error) { failed.push(file.name+': '+message(error)); }
       }
       await reload(); notify('נוספו '+added+' שירים לאייפון'+(failed.length ? '. חלק מהקבצים לא נשמרו.' : ''));
@@ -178,7 +195,7 @@
           try { response = await fetch(track.url,{signal:controller.signal}); if (!response.ok) throw new Error('ההורדה נכשלה'); blob = await response.blob(); } finally { clearTimeout(timeout); }
           if (!blob.size || blob.type.includes('text/html')) throw new Error('קובץ שמע לא תקין');
           const latest = await read('tracks',track.id); if (!latest || latest.hidden) continue;
-          await write('tracks',[{...latest,blob}]); done++; await reload();
+          await write('tracks',[{...latest,blob}],[],true); done++; await reload();
         } catch(error) { failures.push(track.title+': '+message(error)); }
       }
       $('download-progress').textContent = failures.length ? failures.join(' | ') : pending.length ? 'השמירה הסתיימה. אפשר לבדוק במצב טיסה 🎉' : 'כל השירים הגלויים כבר שמורים באייפון ✓';
@@ -198,7 +215,7 @@
       const title = $('song-name').value.trim(); const icon = $('custom-icon').value.trim() || pickedIcon;
       if (!title) throw new Error('הזיני שם לשיר.');
       if ([...icon].length > 24) throw new Error('בחרי אימוג׳י אחד או סמל קצר.');
-      await write('tracks',[{...track,title,icon,renamed:true}]); await reload();
+      await write('tracks',[{...track,title,icon,renamed:true}],[],title!==track.title || icon!==iconFor(track)); await reload();
       if (currentId === track.id) setMediaInfo({...track,title}); $('edit-dialog').close(); notify('השם והאייקון נשמרו');
     });
   }
@@ -206,10 +223,106 @@
     const track = tracks.find(t => t.id === editingId); if (!track || !confirm('למחוק את ״'+track.title+'״ מהספרייה במכשיר הזה? קובץ המקור נשאר במקומו.')) return;
     await busy(async () => {
       if (currentId === track.id) resetPlayer();
-      if (track.source === 'local') await write('tracks',[],[track.id]);
-      else { const record = {...track,hidden:true}; delete record.blob; await write('tracks',[record]); }
+      if (track.source === 'local') await write('tracks',[],[track.id],true);
+      else { const record = {...track,hidden:true}; delete record.blob; await write('tracks',[record],[],true); }
       await reload(); $('edit-dialog').close(); notify('השיר הוסר מהמכשיר');
     });
+  }
+  function renderBackup() {
+    const dirty = backupState.revision > backupState.savedRevision;
+    const all = visible(); const missing = all.filter(t => !t.blob).length;
+    $('backup-reminder').hidden = !dirty || dismissedRevision === backupState.revision;
+    $('backup-reminder-text').textContent = preparing ? 'מכינים גיבוי לשינויים האחרונים…' : offeredBackup ? 'בחרת לשמור גיבוי? אשרי לאחר השמירה ב״קבצים״' : 'יש שינויים שעדיין לא גובו בקובץ';
+    $('backup-status').textContent = dirty ? 'יש שינויים מאז הגיבוי האחרון שאישרת.' : backupState.lastConfirmedAt ? 'אישרת שמירת גיבוי ב־'+new Date(backupState.lastConfirmedAt).toLocaleString('he-IL') : 'עדיין לא אושרה שמירת גיבוי בקובץ.';
+    const ready = preparedBackup?.revision === backupState.revision;
+    $('backup-save').textContent = preparing ? 'מכינים את קובץ הגיבוי…' : ready ? 'שמירת קובץ הגיבוי' : 'הכנת גיבוי';
+    $('backup-save').disabled = operation || preparing || !all.length || !!missing;
+    $('backup-confirm').hidden = !offeredBackup;
+    $('backup-confirm').disabled = operation;
+    if (backupError) $('backup-progress').textContent = backupError;
+    else if (missing) $('backup-progress').textContent = missing+' שירים עדיין לא זמינים לגיבוי. לחצי על ״שמירת כל השירים לאופליין״ ואז נכין גיבוי מלא.';
+    else if (ready && !offeredBackup) $('backup-progress').textContent = 'הקובץ מוכן: '+all.length+' שירים · '+(preparedBackup.file.size/1024/1024).toFixed(1)+' MB. לחצי לשמירה ובחרי ״שמירה בקבצים״.';
+    else if (!preparing && !offeredBackup) $('backup-progress').textContent = all.length ? 'הגיבוי נשמר כקובץ עם הסיומת little-songs. לאחר שמירתו אפשר לשחזר גם ללא אינטרנט.' : 'הוסיפי שירים כדי ליצור גיבוי.';
+  }
+  function scheduleBackup() {
+    clearTimeout(preparationTimer);
+    // Only prepare locally while the app is open; never launch downloads automatically.
+    if (backupState.revision <= backupState.savedRevision || !visible().length || visible().some(t => !t.blob) || preparedBackup?.revision === backupState.revision) return;
+    preparationTimer = setTimeout(() => prepareBackup(),700);
+  }
+  async function prepareBackup() {
+    clearTimeout(preparationTimer);
+    const token = ++preparationToken; const revision = backupState.revision;
+    preparing = true; backupError = ''; renderBackup();
+    try {
+      const all = visible().map(t => {
+        let file = '';
+        if (t.source === 'catalog') {
+          const url = new URL(t.url || t.file,location.href); const base = new URL('./',location.href);
+          if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname+'songs/')) throw new Error('כתובת השיר אינה תקינה.');
+          file = url.pathname.slice(base.pathname.length);
+        }
+        return {...t,icon:iconFor(t),file};
+      });
+      const blob = await LittleSongsBackup.encode(all,(done,total) => {
+        if (token !== preparationToken || revision !== backupState.revision) throw new DOMException('הספרייה השתנתה','AbortError');
+        $('backup-progress').textContent = 'מכינים גיבוי: '+done+' מתוך '+total+' שירים';
+      });
+      if (token !== preparationToken || revision !== backupState.revision) return;
+      const stamp = new Date().toISOString().replace(/[:.]/g,'-');
+      preparedBackup = {revision,file:new File([blob],'Little-Songs-'+stamp+'.little-songs',{type:'application/octet-stream'})};
+    } catch(error) { if (token === preparationToken && error.name !== 'AbortError') backupError = 'לא ניתן להכין גיבוי: '+message(error); }
+    finally { if (token === preparationToken) { preparing = false; renderBackup(); } }
+  }
+  async function saveBackup() {
+    if (operation || preparing) return;
+    if (!preparedBackup || preparedBackup.revision !== backupState.revision) { await prepareBackup(); return; }
+    // This runs directly from the user's click, so Safari can open its share sheet.
+    const snapshot = preparedBackup;
+    try {
+      if (navigator.canShare?.({files:[snapshot.file]}) && navigator.share) {
+        await navigator.share({files:[snapshot.file],title:'גיבוי השירים שלנו'});
+      } else {
+        const url = URL.createObjectURL(snapshot.file); const link = document.createElement('a');
+        link.href = url; link.download = snapshot.file.name; document.body.append(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url),60000);
+      }
+      offeredBackup = snapshot;
+      $('backup-progress').textContent = 'בחרי ״שמירה בקבצים״ ושמרי באייפון או ב־iCloud Drive. רק לאחר שהקובץ נשמר לחצי ״שמרתי את הקובץ״.';
+      renderBackup();
+    } catch(error) { if (error.name !== 'AbortError') notify('לא ניתן לפתוח שמירה: '+message(error)); }
+  }
+  async function confirmBackup() {
+    if (!offeredBackup) return;
+    const revision = offeredBackup.revision;
+    await busy(async () => {
+      await new Promise((resolve,reject) => {
+        const tx = db.transaction('meta','readwrite'); const table = tx.objectStore('meta'); const request = table.get('backupState');
+        request.onsuccess = () => {
+          const latest = request.result?.value || backupState;
+          table.put({key:'backupState',value:{...latest,savedRevision:Math.max(latest.savedRevision,revision),lastConfirmedAt:Date.now()}});
+        };
+        tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+      });
+      offeredBackup = null; await reload(); notify('אישור שמירת הגיבוי נרשם');
+    });
+  }
+  async function restoreBackup(file) {
+    if (!file) return;
+    await busy(async () => {
+      backupError = '';
+      $('backup-progress').textContent = 'בודקים את קובץ הגיבוי…';
+      const restored = await LittleSongsBackup.decode(file,(done,total) => { $('backup-progress').textContent = 'בדיקת הגיבוי: '+done+' מתוך '+total+' שירים'; });
+      if (!restored.length) throw new Error('קובץ הגיבוי אינו מכיל שירים.');
+      if (!confirm('לשחזר '+restored.length+' שירים מהגיבוי? שירים עם אותו מזהה יעודכנו, כולל השם והאייקון. שירים אחרים שכבר קיימים בנגן יישארו.')) return;
+      await requestPersistence();
+      const entries = restored.map(t => t.source === 'catalog' ? {...t,url:new URL(t.file,new URL('./',location.href)).href} : t);
+      // All bytes and checksums have been validated before this single atomic write.
+      await write('tracks',entries,[],true); resetPlayer();
+      offeredBackup = null; preparedBackup = null; $('song-search').value = ''; await reload();
+      notify('שוחזרו '+entries.length+' שירים, כולל השמות והאייקונים');
+    });
+    $('backup-file').value = '';
   }
   async function setupOffline() {
     if (!('serviceWorker' in navigator) || !window.isSecureContext) { $('download-progress').textContent = 'להתקנה ולאופליין יש לפתוח את האתר דרך כתובת HTTPS, ולא כקובץ מקומי.'; return; }
@@ -220,6 +333,12 @@
       await navigator.serviceWorker.ready; shellReady = true; render();
     } catch { if (!shellReady) $('download-progress').textContent = 'הממשק לא נשמר לאופליין. נסי לרענן כשהאינטרנט מחובר.'; }
   }
+  $('backup-save').addEventListener('click',saveBackup);
+  $('backup-confirm').addEventListener('click',confirmBackup);
+  $('backup-import').addEventListener('click',() => { if (!operation) $('backup-file').click(); });
+  $('backup-file').addEventListener('change',() => restoreBackup($('backup-file').files[0]));
+  $('backup-reminder-open').addEventListener('click',() => { $('parents').showModal(); $('parents-toggle').setAttribute('aria-expanded','true'); $('backup-title').scrollIntoView({block:'start'}); });
+  $('backup-reminder-dismiss').addEventListener('click',() => { dismissedRevision = backupState.revision; renderBackup(); });
   $('play').addEventListener('click',() => { const t = current() || visible()[0]; if (t) playSong(t.id); });
   $('previous').addEventListener('click',() => moveSong(-1)); $('next').addEventListener('click',() => moveSong(1));
   $('seek').addEventListener('input',() => { scrubbing = true; $('elapsed').textContent = time(Number($('seek').value)); });
@@ -240,7 +359,7 @@
   $('edit-toggle').addEventListener('click',() => { editing = !editing; render(); if (editing) $('parents').close(); });
   $('import').addEventListener('click',() => $('files').click()); $('files').addEventListener('change',() => importFiles([...$('files').files]));
   $('download-all').addEventListener('click',downloadAll); $('refresh').addEventListener('click',() => busy(() => refreshCatalog()));
-  $('restore').addEventListener('click',() => busy(async () => { await write('tracks',tracks.filter(t => t.hidden).map(t => ({...t,hidden:false}))); await reload(); notify('השירים חזרו לרשימה. להאזנה אופליין יש לשמור אותם שוב.'); }));
+  $('restore').addEventListener('click',() => busy(async () => { await write('tracks',tracks.filter(t => t.hidden).map(t => ({...t,hidden:false})),[],true); await reload(); notify('השירים חזרו לרשימה. להאזנה אופליין יש לשמור אותם שוב.'); }));
   $('edit-form').addEventListener('submit',saveEdit); $('delete-song').addEventListener('click',deleteSong); $('edit-close').addEventListener('click',() => $('edit-dialog').close());
   $('custom-icon').addEventListener('input',() => { pickedIcon = $('custom-icon').value; });
   if ('mediaSession' in navigator) { for (const [action,handler] of Object.entries({play:() => {const t=current();if(t)playSong(t.id,false);},pause:()=>audio.pause(),previoustrack:()=>moveSong(-1),nexttrack:()=>moveSong(1),seekto:details=>{if(Number.isFinite(details.seekTime)) audio.currentTime=details.seekTime;}})) try { navigator.mediaSession.setActionHandler(action,handler); } catch {} }
