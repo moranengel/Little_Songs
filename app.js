@@ -235,12 +235,13 @@
     $('backup-reminder-text').textContent = preparing ? 'מכינים גיבוי לשינויים האחרונים…' : offeredBackup ? 'בחרת לשמור גיבוי? אשרי לאחר השמירה ב״קבצים״' : 'יש שינויים שעדיין לא גובו בקובץ';
     $('backup-status').textContent = dirty ? 'יש שינויים מאז הגיבוי האחרון שאישרת.' : backupState.lastConfirmedAt ? 'אישרת שמירת גיבוי ב־'+new Date(backupState.lastConfirmedAt).toLocaleString('he-IL') : 'עדיין לא אושרה שמירת גיבוי בקובץ.';
     const ready = preparedBackup?.revision === backupState.revision;
-    $('backup-save').textContent = preparing ? 'מכינים את קובץ הגיבוי…' : ready ? 'שמירת קובץ הגיבוי' : 'הכנת גיבוי';
-    $('backup-save').disabled = operation || preparing || !all.length || !!missing;
+    $('backup-save').textContent = !all.length ? 'אין שירים לגיבוי' : operation ? 'ממתינים לסיום הפעולה…' : preparing ? 'מכינים את קובץ הגיבוי…' : ready ? 'שמירת קובץ הגיבוי' : missing ? 'הורדת השירים והכנת גיבוי' : 'הכנת גיבוי';
+    $('backup-save').disabled = operation || preparing || !all.length;
+    $('backup-cancel').hidden = !preparing;
     $('backup-confirm').hidden = !offeredBackup;
     $('backup-confirm').disabled = operation;
     if (backupError) $('backup-progress').textContent = backupError;
-    else if (missing) $('backup-progress').textContent = missing+' שירים עדיין לא זמינים לגיבוי. לחצי על ״שמירת כל השירים לאופליין״ ואז נכין גיבוי מלא.';
+    else if (missing) $('backup-progress').textContent = missing+' שירים עדיין לא שמורים במכשיר. לחצי על הכפתור להורדתם והכנת גיבוי. נדרש אינטרנט להשלמת ההורדה.';
     else if (ready && !offeredBackup) $('backup-progress').textContent = 'הקובץ מוכן: '+all.length+' שירים · '+(preparedBackup.file.size/1024/1024).toFixed(1)+' MB. לחצי לשמירה ובחרי ״שמירה בקבצים״.';
     else if (!preparing && !offeredBackup) $('backup-progress').textContent = all.length ? 'הגיבוי נשמר כקובץ עם הסיומת little-songs. לאחר שמירתו אפשר לשחזר גם ללא אינטרנט.' : 'הוסיפי שירים כדי ליצור גיבוי.';
   }
@@ -276,6 +277,16 @@
   }
   async function saveBackup() {
     if (operation || preparing) return;
+    if (!visible().length) { notify('הוסיפי שירים לפני יצירת גיבוי.'); return; }
+    if (visible().some(t => !t.blob)) {
+      backupError = '';
+      if (visible().some(t => !t.blob && t.source !== 'catalog')) {
+        backupError = 'חסר קובץ שמע מקומי. הוסיפי אותו מחדש דרך ״הוספת שירים מהאייפון״ כדי לכלול אותו בגיבוי.'; renderBackup(); return;
+      }
+      if (navigator.onLine === false) { backupError = 'חלק מהשירים עדיין לא הורדו. התחברי לאינטרנט ולחצי שוב על הכנת גיבוי.'; renderBackup(); return; }
+      await downloadAll();
+      if (visible().some(t => !t.blob)) { backupError = 'חלק מהשירים לא הורדו. בדקי את החיבור ונסי שוב. לא נוצר גיבוי חלקי.'; renderBackup(); return; }
+    }
     if (!preparedBackup || preparedBackup.revision !== backupState.revision) { await prepareBackup(); return; }
     // This runs directly from the user's click, so Safari can open its share sheet.
     const snapshot = preparedBackup;
@@ -290,7 +301,7 @@
       offeredBackup = snapshot;
       $('backup-progress').textContent = 'בחרי ״שמירה בקבצים״ ושמרי באייפון או ב־iCloud Drive. רק לאחר שהקובץ נשמר לחצי ״שמרתי את הקובץ״.';
       renderBackup();
-    } catch(error) { if (error.name !== 'AbortError') notify('לא ניתן לפתוח שמירה: '+message(error)); }
+    } catch(error) { if (error.name !== 'AbortError') { backupError = 'לא ניתן לפתוח שמירה: '+message(error); renderBackup(); } }
   }
   async function confirmBackup() {
     if (!offeredBackup) return;
@@ -334,6 +345,10 @@
     } catch { if (!shellReady) $('download-progress').textContent = 'הממשק לא נשמר לאופליין. נסי לרענן כשהאינטרנט מחובר.'; }
   }
   $('backup-save').addEventListener('click',saveBackup);
+  $('backup-cancel').addEventListener('click',() => {
+    clearTimeout(preparationTimer); preparationToken++; preparing = false;
+    backupError = 'ההכנה בוטלה. אפשר ללחוץ שוב על הכנת גיבוי.'; renderBackup();
+  });
   $('backup-confirm').addEventListener('click',confirmBackup);
   $('backup-import').addEventListener('click',() => { if (!operation) $('backup-file').click(); });
   $('backup-file').addEventListener('change',() => restoreBackup($('backup-file').files[0]));
