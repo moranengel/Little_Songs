@@ -6,7 +6,7 @@ const root = path.resolve(__dirname,'..');
 const html = fs.readFileSync(path.join(root,'index.html'),'utf8');
 const sw = fs.readFileSync(path.join(root,'sw.js'),'utf8');
 const shell = JSON.parse(sw.match(/const SHELL = (.*);/)[1]);
-for (const file of ['style.css','backup.js','app.js']) {
+for (const file of ['style.css','safeguards.js','playlists.js','backup.js','app.js']) {
  const content = fs.readFileSync(path.join(root,file));
  const hash = crypto.createHash('sha256').update(content).digest('hex').slice(0,12);
  const ext = path.extname(file); const ref = './assets/'+path.basename(file,ext)+'-'+hash+ext;

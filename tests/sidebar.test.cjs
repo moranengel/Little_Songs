@@ -1,0 +1,26 @@
+const assert=require('node:assert/strict');
+const PL=require('../playlists.js'),B=require('../backup.js');
+const make=(id,pinned=false)=>({id,name:id,icon:'🎵',color:'#ddeeff',sortMode:'manual',trackIds:['a','b','c','d','e'],pinned});
+const p=make('p'),q=make('q',true),r=make('r'),s=make('s',true);
+const ordered=PL.sidebar([p,q,r,s]);assert.deepEqual(ordered.map(p=>p.id),['q','s','p','r']);
+assert.deepEqual(PL.moveSidebar(ordered,'s','q').map(p=>p.id),['s','q','p','r']);
+assert.deepEqual(PL.moveSidebar(ordered,'p','r').map(p=>p.id),['q','s','r','p']);
+assert.deepEqual(PL.moveSidebar(ordered,'p','q'),ordered,'Cannot drag across pinned groups');
+assert.deepEqual(PL.moveSidebar(ordered,'all','q'),ordered,'All Songs cannot be reordered');
+assert.deepEqual(PL.upsertSidebar(ordered,{...q,pinned:false}).map(p=>p.id),['s','p','r','q'],'Unpinned items go to the end');
+assert.deepEqual(PL.upsertSidebar(ordered,{...p,pinned:true}).map(p=>p.id),['q','s','p','r']);
+assert.deepEqual(PL.upsertSidebar(ordered,{...p,name:'renamed'}).map(p=>p.id),['q','s','p','r'],'Rename preserves ordering');
+assert.throws(()=>PL.validate([{...p,pinned:'yes'}]));
+const removed=PL.removeMembership([p,q],p.id,['d','b','unknown']);
+assert.deepEqual(removed.playlists[0].trackIds,['a','c','e']);assert.deepEqual(removed.playlists[1],q,'Other playlists are untouched');
+assert.deepEqual(p.trackIds,['a','b','c','d','e']);
+const items=removed.removed.map(m=>({kind:'song',trackId:m.trackId,memberships:[{id:p.id,index:m.index}]}));
+assert.deepEqual(PL.restoreMemberships(removed.playlists,items),[p,q],'Single/bulk membership undo restores positions');
+(async()=>{
+ const tracks=['a','b','c','d','e'].map((id,order)=>({id,title:id,icon:'🎵',source:'local',order,duration:1,blob:new Blob([id])}));
+ const decoded=await B.decodeLibrary(await B.encode(tracks,()=>{},{playlists:ordered,librarySort:'manual'}));
+ assert.deepEqual(decoded.playlists,ordered,'Backup preserves pin flags and sidebar order');
+ const legacy={...p};delete legacy.pinned;
+ assert.deepEqual(PL.validate([legacy]),[legacy],'Legacy backups without pin metadata stay compatible');
+ console.log('PASS: stable pinned groups, bounded reordering, unpin placement, membership-only removal/undo, backup and legacy compatibility.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

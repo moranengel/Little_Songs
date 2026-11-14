@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=path.resolve(__dirname,'..'),read=name=>fs.readFileSync(path.join(root,name),'utf8');
+assert.ok(read('app.js').includes("indexedDB.open('little-songs-web-v1',1)"));
+assert.ok(!read('app.js').includes('little-songs-test-v1'));
+assert.ok(read('sw.js').includes("const PREFIX = 'little-songs-shell:'"));
+assert.ok(!read('sw.js').includes('little-songs-test-shell:'));
+assert.ok(!read('index.html').includes('גרסת בדיקות'));
+const m=JSON.parse(read('manifest.webmanifest'));
+assert.equal(m.id,'./');assert.equal(m.start_url,'./');assert.equal(m.scope,'./');
+assert.equal(m.name,'זמן לשיר! — השירים הקטנים שלנו');assert.equal(m.short_name,'זמן לשיר!');
+assert.equal(JSON.parse(read('version.json')).version,'2026.11.14.1');
+assert.ok(!read('app.js').includes('deleteDatabase('));
+console.log('PASS: stable production database/cache/PWA identity and version, no testing identifiers or database reset.');

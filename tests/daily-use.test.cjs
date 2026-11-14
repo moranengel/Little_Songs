@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict');
+const PL=require('../playlists.js'),B=require('../backup.js');
+const original={id:'p',name:'יום הולדת',icon:'🎂',color:'#ddeeff',sortMode:'manual',trackIds:['a','b','c','d','e']};
+const other={...original,id:'q',name:'חג',trackIds:['e','d','b','c','a']};
+const copied=PL.copy(original,'copy');
+assert.equal(copied.name,'יום הולדת — עותק');assert.deepEqual(copied.trackIds,original.trackIds);
+copied.trackIds.reverse();assert.deepEqual(original.trackIds,['a','b','c','d','e'],'Copy must be independent');
+const assigned=PL.assign([original,other],'q',['a','new','new']);
+assert.deepEqual(assigned[1].trackIds,['e','d','b','c','a','new']);assert.deepEqual(other.trackIds,['e','d','b','c','a']);
+assert.deepEqual(PL.assign(assigned,'q',['new']),assigned,'Repeated assignment must not duplicate');
+assert.throws(()=>PL.assign([original],'missing',['a']));
+const tracks=['d','b','a','c','e'].map(id=>({id,title:id,order:original.trackIds.indexOf(id),source:'local',icon:'🎵',duration:1,blob:new Blob([id],{type:'audio/mpeg'})}));
+const plan=PL.planRemoval(tracks,[original,other],['b','d','missing']);
+assert.deepEqual(plan.records.map(t=>t.id),['d','b']);assert.ok(plan.records.every(t=>t.hidden&&t.blob));
+assert.deepEqual(plan.playlists.map(p=>p.trackIds),[['a','c','e'],['e','c','a']]);
+const recovery=PL.restoreMemberships(plan.playlists,plan.deleted.map(t=>({...t,kind:'song'})));
+assert.deepEqual(recovery,[original,other],'Batch undo restores the different original orders, independent of IDB order');
+assert.deepEqual(original.trackIds,['a','b','c','d','e']);
+(async()=>{
+ const lists=[original,PL.copy(original,'copy')];
+ const archive=await B.decodeLibrary(await B.encode(tracks,()=>{},{playlists:lists,librarySort:'manual'}));
+ assert.deepEqual(archive.playlists,lists,'Copied playlist and membership survive backup');
+ console.log('PASS: independent playlist copies, idempotent assignment, batch removal and ordered recovery, backup compatibility.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

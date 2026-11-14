@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict');const PL=require('../playlists.js');const B=require('../backup.js');
+const tracks=[{id:'a',title:'בוקר',order:2,blob:new Blob(['audio A'],{type:'audio/mpeg'})},{id:'b',title:'אביב',order:1,blob:new Blob(['audio B'],{type:'audio/mpeg'})},{id:'c',title:'שינה',order:3,hidden:true}].map(t=>({...t,icon:'🎵',source:'local',duration:1,...t}));
+const lists=[{id:'birthday',name:'יום הולדת',icon:'🎂',color:'#ffedcc',trackIds:['a','b'],sortMode:'manual'},{id:'holiday',name:'חנוכה',icon:'🕎',color:'#ddeeff',trackIds:['b'],sortMode:'manual'}];
+assert.deepEqual(PL.select(tracks,null).map(t=>t.id),['b','a']);
+assert.deepEqual(PL.select(tracks,lists[0]).map(t=>t.id),['a','b']);
+assert.deepEqual(PL.select(tracks,{...lists[0],sortMode:'name'}).map(t=>t.id),['b','a']);
+assert.deepEqual(PL.select(tracks,{...lists[0],trackIds:['c','gone','b']}).map(t=>t.id),['b']);
+assert.equal(PL.normalize('יוֹם הוּלֶּדֶת'),'יום הולדת');
+assert.equal(PL.validate(lists,['a','b']).length,2);
+assert.throws(()=>PL.validate([...lists,lists[0]]));assert.throws(()=>PL.validate([{...lists[0],trackIds:['a','a']}]));assert.throws(()=>PL.validate([{...lists[0],trackIds:['c']}],['a','b']));assert.throws(()=>PL.validate([{...lists[0],color:'url(evil)'}]));
+const queue=PL.queue(['a','b','c'],'b',true,()=>0);assert.equal(queue[0],'b');assert.equal(new Set(queue).size,3);assert.deepEqual([...queue].sort(),['a','b','c']);
+assert.equal(PL.adjacent(['a','b'],'b',1,'off'),null);assert.equal(PL.adjacent(['a','b'],'b',1,'one'),null);assert.equal(PL.adjacent(['a','b'],'b',1,'all'),'a');assert.equal(PL.adjacent(['a','b'],'a',-1,'all'),'b');assert.equal(PL.adjacent([],'a',1,'all'),null);
+(async()=>{
+ const archive=await B.encode(tracks.filter(t=>!t.hidden),()=>{},{playlists:lists,librarySort:'name'});const result=await B.decodeLibrary(archive);
+ assert.deepEqual(result.playlists,lists);assert.equal(result.librarySort,'name');assert.equal(result.hasPlaylists,true);assert.equal(await result.tracks[0].blob.text(),'audio A');
+ const legacy=await B.decodeLibrary(await B.encode(tracks.filter(t=>!t.hidden)));assert.equal(legacy.hasPlaylists,false);assert.deepEqual(legacy.playlists,[]);
+ const empty=[{...lists[0],trackIds:[]}];const e=await B.decodeLibrary(await B.encode([],()=>{},{playlists:empty,librarySort:'manual'}));assert.deepEqual(e.playlists,empty);assert.equal(e.tracks.length,0);
+ await assert.rejects(B.encode([tracks[0]],()=>{},{playlists:lists}));
+ console.log('PASS: multi-playlist membership, hidden/deleted tracks, custom/name order, stable shuffle, repeat boundaries, v2 playlists/audio round-trip, v1 compatibility and empty playlists.');
+})().catch(e=>{console.error(e);process.exit(1)});
