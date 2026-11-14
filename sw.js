@@ -1,7 +1,7 @@
 'use strict';
-const PREFIX = 'little-songs-shell:' + new URL(self.registration.scope).pathname + ':';
+const PREFIX = 'little-songs-test-shell:' + new URL(self.registration.scope).pathname + ':';
 const CACHE = PREFIX + 'v6';
-const SHELL = ["./","./index.html","./assets/style-cdeb427e528c.css","./assets/backup-d12f33d51bce.js","./assets/app-efaa8791a468.js","./manifest.webmanifest","./songs.json","./icons/icon-192.png","./icons/icon-512.png","./icons/apple-touch-icon.png"];
+const SHELL = ["./","./index.html","./assets/style-cdeb427e528c.css","./assets/backup-d12f33d51bce.js","./assets/app-a239a418864c.js","./manifest.webmanifest","./songs.json","./icons/icon-192.png","./icons/icon-512.png","./icons/apple-touch-icon.png"];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

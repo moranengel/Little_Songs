@@ -20,7 +20,7 @@
   function notify(text) { clearTimeout(noticeTimer); $('notice').textContent = text; $('notice').hidden = false; noticeTimer = setTimeout(() => $('notice').hidden = true,6000); }
   function openDB() {
     return new Promise((resolve,reject) => {
-      const request = indexedDB.open('little-songs-web-v1',1);
+      const request = indexedDB.open('little-songs-test-v1',1);
       request.onupgradeneeded = () => { request.result.createObjectStore('tracks',{keyPath:'id'}); request.result.createObjectStore('meta',{keyPath:'key'}); };
       request.onsuccess = () => { const result = request.result; result.onversionchange = () => result.close(); resolve(result); };
       request.onerror = () => reject(request.error);

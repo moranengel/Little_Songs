@@ -1,0 +1,10 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');const path = require('node:path');const root = path.resolve(__dirname,'..');
+const read = name => fs.readFileSync(path.join(root,name),'utf8');
+assert.ok(read('app.js').includes("indexedDB.open('little-songs-test-v1',1)"));
+assert.ok(!read('app.js').includes("indexedDB.open('little-songs-web-v1'"));
+assert.ok(read('sw.js').includes('little-songs-test-shell:'));
+assert.ok(!read('sw.js').includes("'little-songs-shell:"));
+assert.ok(read('index.html').includes('🧪 גרסת בדיקות'));
+const manifest=JSON.parse(read('manifest.webmanifest'));assert.ok(manifest.name.includes('בדיקות'));assert.ok(manifest.short_name.includes('בדיקות'));assert.equal(manifest.scope,'./');assert.equal(manifest.start_url,'./');
+console.log('PASS: testing DB, offline caches, visible label and installed app identity are separate from production.');
