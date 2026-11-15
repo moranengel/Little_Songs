@@ -67,9 +67,9 @@ button.song-animal{padding:0;background:transparent;flex:none}button.song-name{d
 /* Fixed dialog frames: only the body scrolls, including in Safari RTL. */
 dialog.framed-dialog{width:calc(100vw - 28px);max-width:460px;max-height:85dvh;padding:0;margin:auto;overflow:hidden;overscroll-behavior:contain}
 dialog.framed-dialog[open]{display:flex;flex-direction:column}
-.framed-dialog>form{display:flex;flex-direction:column;flex:1;min-height:0;max-height:inherit;overflow:hidden;width:100%}
+.framed-dialog>form{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;max-height:inherit;overflow:hidden;width:100%}
 .framed-dialog .dialog-top{flex:none;position:relative;z-index:1;margin:0;padding:14px 20px;gap:12px;background:#fff9f0;border-bottom:1px solid #e1d7f1;min-width:0}
-.framed-dialog .dialog-body{flex:1;min-height:0;min-width:0;max-width:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:0 20px 20px;overflow-wrap:anywhere;-webkit-overflow-scrolling:touch;touch-action:pan-y pinch-zoom}
+.framed-dialog .dialog-body{flex:1 1 auto;min-height:0;min-width:0;max-width:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:0 20px 20px;overflow-wrap:anywhere;-webkit-overflow-scrolling:touch;touch-action:pan-y pinch-zoom}
 .framed-dialog .dialog-body>*{max-width:100%;min-width:0}
 dialog .dialog-top h2{min-width:0;overflow-wrap:anywhere}
 dialog .dialog-top .close{flex-shrink:0}
@@ -79,3 +79,9 @@ dialog .close:focus-visible{background:#d9c8ef;color:#433b65}
 #edit-status{color:#a53547}#edit-status:empty{display:none}
 
 #audio-diagnostics-report{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.7 -apple-system,BlinkMacSystemFont,Arial,sans-serif;color:#433b65}#audio-diagnostics-report:empty{display:none}
+
+/* Give Safari a definite height for the long, internally scrolling settings. */
+dialog.parents.framed-dialog{height:85vh;height:min(760px,85dvh)}
+
+#version-shortcut{color:var(--purple)}#version-shortcut.update-available{background:#eee5fa}
+@media(prefers-reduced-motion:no-preference){#version-shortcut[aria-busy=true] svg{animation:version-pull-spin 1s linear infinite}@keyframes version-pull-spin{to{transform:rotate(360deg)}}}

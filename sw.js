@@ -1,7 +1,7 @@
 'use strict';
 const PREFIX = 'little-songs-shell:' + new URL(self.registration.scope).pathname + ':';
-const CACHE = PREFIX + 'v7';
-const SHELL = ["./","./index.html","./assets/style-ae5f70322d62.css","./assets/safeguards-f0f736568fcf.js","./assets/playlists-09419b253491.js","./assets/backup-368973a58aec.js","./assets/app-5ad5b4166c86.js","./manifest.webmanifest","./songs.json","./icons/rainbow-note-192.png","./icons/rainbow-note-512.png","./icons/rainbow-note-apple.png"];
+const CACHE = PREFIX + 'v8';
+const SHELL = ["./","./index.html","./assets/style-13e83e85d5fa.css","./assets/safeguards-f0f736568fcf.js","./assets/playlists-09419b253491.js","./assets/backup-368973a58aec.js","./assets/app-326e2d228db5.js","./manifest.webmanifest","./songs.json","./icons/rainbow-note-192.png","./icons/rainbow-note-512.png","./icons/rainbow-note-apple.png"];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -15,7 +15,7 @@ self.addEventListener('fetch', event => {
   // Audio blobs are saved explicitly by the app in IndexedDB. Never cache partial audio responses.
   if (relative.startsWith('songs/') || request.headers.has('range')) return;
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(async () => (await caches.open(CACHE)).match(new URL('./index.html',base).href))); return;
+    event.respondWith(fetch(request,{cache:'no-store'}).catch(async () => (await caches.open(CACHE)).match(new URL('./index.html',base).href))); return;
   }
   if (relative === 'songs.json') {
     event.respondWith((async () => {

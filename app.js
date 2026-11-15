@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const audio = $('audio');
-  const SAFE=LittleSongsSafeguards, APP_VERSION='2026.11.14.1';
+  const SAFE=LittleSongsSafeguards, APP_VERSION='2026.11.15.1';
   let childMode=false, adultUnlocked=false, gateAction=null, gateAnswer=0, trash=[], lastUndoId=null, undoTimer;
   let drawerOrdering=false, drawerDraft=[], drawerDrag=null, lastUndoMembership=null;
   let checkingUpdate=false, bulkSelecting=false, selectedSongIds=new Set(), assignIds=[], draftPlaylistId=null, draftSortMode='manual', lastUndoIds=[];
@@ -803,8 +803,39 @@
   const megabytes=n=>(n/1024/1024).toLocaleString('he-IL',{maximumFractionDigits:1})+' MB';
   function renderStorage(){const all=visible(),saved=all.filter(t=>t.blob),size=saved.reduce((sum,t)=>sum+t.blob.size,0),deleted=tracks.filter(t=>t.hidden&&t.blob).reduce((sum,t)=>sum+t.blob.size,0);$('storage-summary').textContent=all.length+' שירים בספרייה · '+saved.length+' זמינים אופליין · '+megabytes(size)+' בשירים פעילים · '+megabytes(deleted)+' בפריטים שנמחקו. '+(saved.length===all.length?'נפח השמע בגיבוי: כ־'+megabytes(size)+'.':'יש להשלים הורדה לפני גיבוי מלא.');$('open-trash').textContent='שחזור פריטים שנמחקו ('+trash.length+')';$('app-version').textContent='גרסה: \u2066'+APP_VERSION+'\u2069';}
   async function refreshStorageEstimate(){renderStorage();try{const estimate=await navigator.storage?.estimate?.();$('storage-estimate').textContent=estimate?.quota?'אחסון הדומיין בדפדפן: כ־'+megabytes(estimate.usage||0)+' מתוך מכסה של '+megabytes(estimate.quota)+'. זו הערכה, לא המקום הפנוי בטלפון.':'הדפדפן אינו מספק הערכת מכסת אחסון.';}catch{$('storage-estimate').textContent='הערכת האחסון אינה זמינה.';}}
-  async function checkUpdate(silent=false){if(checkingUpdate)return;checkingUpdate=true;$('check-update').disabled=true;if(!silent)$('update-status').textContent='בודקים עדכון…';const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);try{const response=await fetch('./version.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error();const remote=await response.json();if(typeof remote.version!=='string'||remote.version.length>80)throw new Error();const available=remote.version!==APP_VERSION;$('update-status').textContent=available?'זמין עדכון לגרסה '+remote.version+'. טעינתו תרענן את הנגן.':'זו הגרסה העדכנית.';$('apply-update').hidden=!available;const registration=await navigator.serviceWorker?.getRegistration?.();await registration?.update();}catch{$('update-status').textContent='לא ניתן לבדוק עדכון כרגע. הגרסה המקומית ממשיכה לעבוד.';}finally{clearTimeout(timer);checkingUpdate=false;$('check-update').disabled=false;}}
-  $('check-update').addEventListener('click',()=>checkUpdate());$('apply-update').addEventListener('click',()=>location.reload());
+  let pullingVersion=false;
+  function waitForVersionWorker(worker) {
+    if(!worker||worker.state==='activated')return Promise.resolve();
+    return new Promise((resolve,reject)=>{
+      const finish=error=>{clearTimeout(timer);worker.removeEventListener('statechange',changed);error?reject(error):resolve();};
+      const changed=()=>{if(worker.state==='activated')finish();else if(worker.state==='redundant')finish(new Error('התקנת העדכון לא הושלמה.'));};
+      const timer=setTimeout(()=>finish(new Error('התקנת העדכון נמשכת זמן רב מדי.')),12000);
+      worker.addEventListener('statechange',changed);changed();
+    });
+  }
+  async function pullLatestVersion() {
+    if(pullingVersion)return;
+    if(operation){notify('ממתינים לסיום השמירה. נסי למשוך גרסה שוב בעוד רגע.');return;}
+    const button=$('version-shortcut');pullingVersion=true;button.disabled=true;button.setAttribute('aria-busy','true');
+    notify('בודקים וטוענים את הגרסה העדכנית…');
+    const controller=new AbortController();let timer;
+    try {
+      const prepare=async()=>{
+        const response=await fetch('./version.json',{cache:'no-store',signal:controller.signal});
+        if(!response.ok)throw new Error('בדיקת הגרסה נכשלה.');
+        const remote=await response.json();
+        if(typeof remote.version!=='string'||!remote.version.trim()||remote.version.length>80)throw new Error('פרטי הגרסה אינם תקינים.');
+        const registration=await navigator.serviceWorker?.getRegistration?.();
+        if(registration){await registration.update();await waitForVersionWorker(registration.installing||registration.waiting);}
+      };
+      await Promise.race([prepare(),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('החיבור לא הגיב בזמן.'));},15000);})]);
+      location.reload();
+    } catch(error){notify('לא ניתן לטעון גרסה כרגע. בדקי חיבור לאינטרנט ונסי שוב.');}
+    finally{clearTimeout(timer);pullingVersion=false;button.disabled=false;button.removeAttribute('aria-busy');}
+  }
+  $('version-shortcut').addEventListener('click',pullLatestVersion);
+  async function checkUpdate(silent=false){if(checkingUpdate)return;checkingUpdate=true;$('check-update').disabled=true;if(!silent)$('update-status').textContent='בודקים עדכון…';const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);try{const response=await fetch('./version.json',{cache:'no-store',signal:controller.signal});if(!response.ok)throw new Error();const remote=await response.json();if(typeof remote.version!=='string'||remote.version.length>80)throw new Error();const available=remote.version!==APP_VERSION;$('version-shortcut').classList.toggle('update-available',available);$('update-status').textContent=available?'זמין עדכון לגרסה '+remote.version+'. טעינתו תרענן את הנגן.':'זו הגרסה העדכנית.';$('apply-update').hidden=!available;const registration=await navigator.serviceWorker?.getRegistration?.();await registration?.update();}catch{$('update-status').textContent='לא ניתן לבדוק עדכון כרגע. הגרסה המקומית ממשיכה לעבוד.';}finally{clearTimeout(timer);checkingUpdate=false;$('check-update').disabled=false;}}
+  $('check-update').addEventListener('click',()=>checkUpdate());$('apply-update').addEventListener('click',pullLatestVersion);
   function renderBulk(){$('select-songs').hidden=!editing;const visibleIds=new Set(visible().map(t=>t.id));selectedSongIds=new Set([...selectedSongIds].filter(id=>visibleIds.has(id)));$('bulk-bar').hidden=!bulkSelecting;$('bulk-delete').textContent=activePlaylist()?'הסרה מהפלייליסט':'מחיקה מהספרייה';$('bulk-count').textContent=selectedSongIds.size+' נבחרו';$('select-songs').textContent=bulkSelecting?'סיום בחירה':'בחירת כמה שירים';$('select-songs').setAttribute('aria-pressed',String(bulkSelecting));$('bulk-add').disabled=operation||!selectedSongIds.size;$('bulk-delete').disabled=operation||!selectedSongIds.size;}
   $('select-songs').addEventListener('click',()=>{if(operation||!editing)return;requireAdult(()=>{bulkSelecting=!bulkSelecting;selectedSongIds.clear();render();});});
   $('bulk-all').addEventListener('click',()=>{listed().filter(matchesSearch).forEach(t=>selectedSongIds.add(t.id));render();});

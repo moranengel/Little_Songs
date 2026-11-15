@@ -8,6 +8,6 @@ assert.ok(!read('index.html').includes('גרסת בדיקות'));
 const m=JSON.parse(read('manifest.webmanifest'));
 assert.equal(m.id,'./');assert.equal(m.start_url,'./');assert.equal(m.scope,'./');
 assert.equal(m.name,'זמן לשיר! — השירים הקטנים שלנו');assert.equal(m.short_name,'זמן לשיר!');
-assert.equal(JSON.parse(read('version.json')).version,'2026.11.14.1');
+assert.equal(JSON.parse(read('version.json')).version,'2026.11.15.1');
 assert.ok(!read('app.js').includes('deleteDatabase('));
 console.log('PASS: stable production database/cache/PWA identity and version, no testing identifiers or database reset.');
